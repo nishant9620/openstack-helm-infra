@@ -25,16 +25,16 @@ pgsql_superuser_cmd () {
 
   psql \
   -h ${DB_HOST} \
-  -p 5432 \
-  -U ${ROOT_DB_USER} \
+  -p ${DB_PORT} \
+  -U ${DB_ADMIN_USER} \
   --command="${DB_COMMAND}"
 }
 
 if [[ ! -v DB_HOST ]]; then
     echo "environment variable DB_HOST not set"
     exit 1
-elif [[ ! -v ROOT_DB_USER ]]; then
-    echo "environment variable ROOT_DB_USER not set"
+elif [[ ! -v DB_ADMIN_USER ]]; then
+    echo "environment variable DB_ADMIN_USER not set"
     exit 1
 elif [[ ! -v PGPASSWORD ]]; then
     echo "environment variable PGPASSWORD not set"
@@ -56,7 +56,7 @@ fi
 pgsql_superuser_cmd "SELECT 1 FROM pg_database WHERE datname = '$USER_DB_NAME'" | grep -q 1 || pgsql_superuser_cmd "CREATE DATABASE $USER_DB_NAME"
 
 #create db user
-pgsql_superuser_cmd "SELECT * FROM pg_roles WHERE rolname = '$USER_DB_USER';" | tail -n +3 | head -n -2 | grep -q 1 || \
+pgsql_superuser_cmd "SELECT * FROM pg_roles WHERE rolname = '$USER_DB_USER';" | grep -q 1 || \
     pgsql_superuser_cmd "CREATE ROLE ${USER_DB_USER} LOGIN PASSWORD '$USER_DB_PASS';" 
 
 #Set password everytime. This is required for cases when we would want password rotation to take effect and set the updated password for a user.
@@ -64,4 +64,13 @@ pgsql_superuser_cmd "SELECT * FROM pg_roles WHERE rolname = '$USER_DB_USER';" &&
 
 #give permissions to user
 pgsql_superuser_cmd "GRANT ALL PRIVILEGES ON DATABASE $USER_DB_NAME to $USER_DB_USER;"
+
+if [[ -v SHIPYARD_AUXILIARY_CONFIG ]]; then
+   echo "Applying additional config for Shipyard"
+
+   # Grant permissions to shipyard user to the airflow dataabase tables
+   # This will allow shipyard user to query airflow database
+   psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_ADMIN_USER} -d ${AIRFLOW_DB_NAME} \
+   --command="GRANT select, insert, update, delete on all tables in schema public to $USER_DB_USER;"
+fi
 {{- end }}
